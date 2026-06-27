@@ -1,130 +1,144 @@
-# SPL Queries — Investigation 1 (HTTP Web Attack)
+# SOC Threat Investigation Lab — Boss of the SOC v3
 
-## Query 1 — Find Top Source IPs by Traffic Volume
-**Purpose:** Identify which IPs made the most HTTP requests — 
-high volume from external IP = suspicious
+## Overview
+A hands-on SOC L1 investigation project analyzing real-world 
+cyberattack scenarios using Splunk Enterprise SIEM and the 
+BOTS v3 (Boss of the SOC) dataset containing 143,661 security 
+events across 63 sourcetypes.
 
-index=botsv3 earliest=0 sourcetype="stream:http"
-| stats count by src_ip
-| sort -count
+All findings were independently verified against raw Splunk 
+data before being documented — not copied from walkthroughs 
+or answer keys.
 
-**Finding:** 91.207.175.249 (external) made 839 requests — flagged for investigation
-
----
-
-## Query 2 — Investigate External IP Activity
-**Purpose:** See every request made by suspicious IP — 
-URLs visited, methods used, response codes
-
-index=botsv3 earliest=0 sourcetype="stream:http" src_ip="91.207.175.249"
-| table _time, src_ip, dest_ip, uri_path, status, http_method
-| sort _time
-
-**Finding:** Requests at millisecond speed — confirmed automated
+## Tools & Technologies
+- Splunk Enterprise 9.x (Windows host machine)
+- Boss of the SOC (BOTS) v3 Dataset — Official Splunk CTF Dataset
+- MITRE ATT&CK Framework
+- SPL (Search Processing Language)
 
 ---
 
-## Query 3 — Analyze URI Paths for Suspicious IP
-**Purpose:** See exactly which pages attacker accessed 
-and how many times
+## Investigation 1 — HTTP Web Attack Analysis
 
-index=botsv3 earliest=0 sourcetype="stream:http" src_ip="91.207.175.249"
-| stats count by uri_path, status
-| sort -count
+**Target:** www.brewertalk.com (MyBB Forum, Apache 2.2.34, Amazon AWS)
+**Attack Date:** August 20, 2018
+**Severity:** HIGH
+**Status:** Complete — Partial Breach Confirmed
 
-**Finding:** Hitting /attachment.php, /forumdisplay.php — reconnaissance confirmed
+### Findings Summary
 
----
+| # | Attacker IP | Attack Type | Severity | MITRE Techniques |
+|---|-------------|-------------|----------|-----------------|
+| 1 | 91.207.175.249 | Web Reconnaissance | MEDIUM | T1595, T1592, T1190 |
+| 2 | 35.182.246.222 | Automated Python Scanner | HIGH | T1595.003, T1594, T1587.001 |
+| 3 | 5 coordinated IPs | Credential Stuffing | CRITICAL | T1110.004, T1078, T1090 |
+| 4 | 12.196.122.127 | Data Exfiltration | CRITICAL | T1530, T1119, T1078 |
+| 5 | 61.75.35.114, 45.7.231.174 | Web Shell Scanning (Failed) | MEDIUM | T1505.003, T1595 |
 
-## Query 4 — Status Code Distribution
-**Purpose:** 404s confirm scanning, 304s confirm returning 
-attacker, all 200s confirm successful access
+### Attack Timeline
 
-index=botsv3 earliest=0 sourcetype="stream:http" src_ip="91.207.175.249"
-| stats count by status
+| Time (2018-08-20) | IP | Activity | Result |
+|-------------------|----|----------|--------|
+| 18:34 – 18:47 | 35.182.246.222 | Python script crawls entire forum | Success — site mapped |
+| 18:37 – 19:17 | 5 coordinated IPs | Credential stuffing /member.php — 22 successful logins | Success — accounts compromised |
+| 18:38:57 | 12.196.122.127 | Burst 1 — 7 attachments downloaded in <1 second | Success — data exfiltrated |
+| 18:38 | 157.97.121.69 | Rapid AJAX POSTs to /xmlhttp.php | Success — forum manipulation |
+| 18:40 – 19:19 | 91.207.175.249 | Browser-spoofed reconnaissance — 839 requests over 39 minutes | Success — site mapped |
+| 18:51:57 | 12.196.122.127 | Burst 2 — 7 more attachments downloaded in <1 second | Success — data exfiltrated |
+| 20:11 – 20:26 | 61.75.35.114, 45.7.231.174 | Web shell scanning — POST to PHP backdoor filenames | Failed — all 404 |
 
-**Finding:** 682 success, 155 cached, 2 probes — persistent attacker confirmed
+### Key Evidence Highlights
 
----
+**Finding 1 — Web Reconnaissance:**
+- 839 HTTP requests over 39 minutes (18:40:27 to 19:19:53)
+- Multiple requests within same millisecond — confirms automation
+- Two user agent signatures used (Edge 17.17134 × 791, Chrome 67 × 48)
+- Spoofed browser to blend with legitimate traffic
 
-## Query 5 — Find File Upload Attempts
-**Purpose:** POST to attachment.php = file upload attempt 
-= potential web shell plant
+**Finding 2 — Automated Python Scanner:**
+- User agent `__main__/0.2` — custom Python script, not a real browser
+- 197 out of 197 requests returned 200 OK (100% success — inhuman)
+- Systematically hit every PHP page in sequential order
 
-index=botsv3 earliest=0 sourcetype="stream:http"
-uri_path="/attachment.php" http_method=POST
-| table _time, src_ip, uri_path, status, http_method
-| sort _time
+**Finding 3 — Credential Stuffing:**
+- 5 external IPs generated 22 successful POST logins to /member.php
+- IP 12.196.122.127 rotated user agents from iPhone Safari → Mac Firefox 
+  within 5 minutes — confirms automated tool behavior
+- Shared Edge/17.17134 user agent across multiple IPs suggests 
+  coordinated infrastructure
 
-**Finding:** No results — 91.207.175.249 did not upload anything
+**Finding 4 — Data Exfiltration:**
+- 14 forum attachments bulk downloaded across 2 automated bursts
+- Burst 1: 7 files at 18:38:57 (under 1 second)
+- Burst 2: 7 files at 18:51:57 (under 1 second)
+- Overlapping timeline with login attempts suggests prior session 
+  access or unauthenticated guest access vulnerability in MyBB
 
----
+**Finding 5 — Web Shell Scanning:**
+- Both IPs used identical PHP shell name list — suggests same tool/operator
+- All POST attempts returned 404 — no pre-existing shells found
+- PROPFIND (WebDAV) also returned 503 — no WebDAV access available
+- Attack completely failed
 
-## Query 6 — Detect Automated Scanners (All IPs)
-**Purpose:** Zoom out from single IP — find any IP 
-repeatedly hitting PHP files across entire dataset
+### SPL Queries
+See `/queries/splunk_queries.md` — all 15 SPL queries with 
+purpose explanations
 
-index=botsv3 earliest=0 sourcetype="stream:http"
-| where like(uri_path, "%.php%")
-| stats count by src_ip, uri_path
-| where count > 10
-| sort -count
+### Evidence Screenshots
+See `/screenshots/` — all evidence labeled by finding number
 
-**Finding:** Discovered new suspect 35.182.246.222 hitting every PHP page
-
----
-
-## Query 7 — Identify Attack Tool via User Agent
-**Purpose:** User agent reveals what tool attacker used — 
-real browser vs custom script
-
-index=botsv3 earliest=0 sourcetype="stream:http" src_ip="35.182.246.222"
-| table _time, uri_path, http_method, status, http_user_agent
-| sort _time
-
-**Finding:** __main__/0.2 = custom Python script confirmed
-
----
-
-## Query 8 — Find All Successful POST Requests
-**Purpose:** POST + 200 = someone successfully submitted 
-data — login, upload, or command execution
-
-index=botsv3 earliest=0 sourcetype="stream:http"
-http_method=POST status=200
-| table _time, src_ip, uri_path, status
-| sort _time
-
-**Finding:** Multiple external IPs successfully POSTing to /member.php
-
----
-
-## Query 9 — Investigate Credential Stuffing IPs
-**Purpose:** Filter noise (CSS/JS/images) to see only 
-meaningful attacker actions after login
-
-index=botsv3 earliest=0 sourcetype="stream:http"
-| where src_ip IN ("157.97.121.69","107.77.75.123",
-"12.196.122.127","62.251.109.73")
-| where NOT like(uri_path, "%.css")
-| where NOT like(uri_path, "%.js")
-| where NOT like(uri_path, "%.png")
-| where NOT like(uri_path, "%.ico")
-| table _time, src_ip, uri_path, http_method, status
-| sort _time
-
-**Finding:** 12.196.122.127 bulk downloaded 7 attachments in 1 second
+### Full Incident Report
+See `/reports/SOC_Incident_Report_Brewertalk.pdf` — 
+13-page professional incident response report including 
+executive summary, evidence tables, MITRE ATT&CK mapping, 
+and recommendations
 
 ---
 
-## Query 10 — Detect User Agent Spoofing
-**Purpose:** Same IP switching OS/browser = automated 
-tool rotating user agents to evade detection
+## Investigations In Progress
 
-index=botsv3 earliest=0 sourcetype="stream:http"
-uri_path="/member.php" http_method=POST
-| table _time, src_ip, status, http_user_agent
-| sort _time
+- **Investigation 2** — Compromised Internal Machine Analysis
+  - Target: 192.168.3.130 (highest internal HTTP traffic — 2207 requests)
+  - Focus: Malware beaconing, C2 communication, Windows Event Log analysis
+  - Sourcetypes: wineventlog:security, Sysmon, stream:dns
 
-**Finding:** 12.196.122.127 switched from iPhone to Mac Firefox 
-in 2 minutes — confirmed credential stuffing tool
+- **Investigation 3** — DNS C2 Beaconing Detection
+  - Focus: Regular DNS queries to suspicious domains, DNS tunneling
+  - Sourcetype: stream:dns
+
+- **Investigation 4** — Windows Event Log Threat Hunting
+  - Focus: Failed logins (Event ID 4625), privilege escalation (Event ID 4732)
+  - Sourcetype: wineventlog:security
+
+---
+
+## MITRE ATT&CK Coverage
+
+| Technique ID | Technique Name | Tactic | Found In |
+|---|---|---|---|
+| T1595 | Active Scanning | Reconnaissance | Findings 1, 2, 5 |
+| T1592 | Gather Victim Host Info | Reconnaissance | Finding 1 |
+| T1594 | Search Victim-Owned Websites | Reconnaissance | Finding 2 |
+| T1587.001 | Develop Capabilities | Resource Development | Finding 2 |
+| T1190 | Exploit Public Facing Application | Initial Access | Findings 1, 5 |
+| T1110.004 | Credential Stuffing | Credential Access | Finding 3 |
+| T1078 | Valid Accounts | Initial Access / Defense Evasion | Findings 3, 4 |
+| T1505.003 | Web Shell | Persistence | Finding 5 (attempted) |
+| T1119 | Automated Collection | Collection | Finding 4 |
+| T1530 | Data from Cloud Storage | Exfiltration | Finding 4 |
+
+---
+
+## Skills Demonstrated
+- Splunk SPL query writing and analysis
+- HTTP traffic log analysis
+- Attacker IP profiling and behavioral analysis
+- User agent fingerprinting and spoofing detection
+- Evidence verification — all findings cross-checked against raw data
+- MITRE ATT&CK TTP mapping
+- Structured Incident Response documentation
+- Attack chain reconstruction
+
+---
+
+## Repository Structure
