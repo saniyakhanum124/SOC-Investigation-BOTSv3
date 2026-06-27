@@ -125,7 +125,7 @@ and recommendations
 ---
 
 ## Repository Structure
-OC-Investigation-BOTSv3/
+SOC-Investigation-BOTSv3/
 
 │
 
