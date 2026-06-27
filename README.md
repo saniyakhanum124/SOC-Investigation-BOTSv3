@@ -125,3 +125,41 @@ and recommendations
 ---
 
 ## Repository Structure
+OC-Investigation-BOTSv3/
+
+│
+
+├── README.md
+
+├── investigations/
+
+│   └── 01_HTTP_Web_Attack_Investigation.md
+
+├── queries/
+
+│   └── splunk_queries.md
+
+├── screenshots/
+
+│   ├── F1_01_status_codes.png
+
+│   ├── F1_02_request_timing.png
+
+│   ├── F1_03_user_agents.png
+
+│   ├── F1_04_pages_accessed.png
+
+│   ├── F2_01_python_scanner.png
+
+│   ├── F3_01_login_count_by_ip.png
+
+│   ├── F3_02_user_agent_rotation.png
+
+│   ├── F4_01_attachment_downloads.png
+
+│   ├── F5_01_webshell_scan_ip1.png
+
+│   └── F5_02_webshell_scan_ip2.png
+└── reports/
+
+└── SOC_Incident_Report_Brewertalk.pdf
